@@ -318,6 +318,77 @@ def render(title: str, subtitle: str = "", hero: dict | None = None,
     return str(p)
 
 
+def render_help(items, title: str = "海克斯大乱斗 · 指令帮助",
+                subtitle: str = "用「/海克斯」开头，支持俗称与缩写",
+                footer: str = "数据源 ARAMKit") -> str | None:
+    """渲染指令帮助卡。items = [(指令, 说明), ...]"""
+    if not available():
+        return None
+    items = list(items or [])
+    has_chara = _load_chara() is not None
+
+    head_h = 214 if has_chara else 100
+    row_h = 58
+    footer_h = 44
+    bottom_pad = 34 if has_chara else 18
+    H = head_h + len(items) * row_h + 16 + footer_h + bottom_pad
+
+    img = _gradient(W, H)
+    if has_chara:
+        _glow(img, W - 210, 108, 190)
+        _paste_chara(img, 4, head_h + 18)
+
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W, 5], fill=ROSE)
+    d.text((PAD, 30), title, font=_f(29, True), fill=TEXT)
+    if subtitle:
+        d.text((PAD, 70), subtitle, font=_f(16), fill=MUTED)
+
+    y = head_h
+    for i, (cmd, desc) in enumerate(items):
+        ry = y + i * row_h
+        box = [PAD, ry, W - PAD, ry + row_h - 8]
+        _soft_shadow(img, box, 14, blur=5, offset=2, alpha=55)
+        d.rounded_rectangle(box, radius=14,
+                            fill=(CARD if i % 2 == 0 else CARD_ALT) + (255,))
+
+        # 左侧指令
+        cf = _f(19, True)
+        cmd_txt = str(cmd)
+        maxcw = 330
+        if d.textlength(cmd_txt, font=cf) > maxcw:
+            while cmd_txt and d.textlength(cmd_txt + "…", font=cf) > maxcw:
+                cmd_txt = cmd_txt[:-1]
+            cmd_txt += "…"
+        d.text((PAD + 20, ry + 13), cmd_txt, font=cf, fill=ROSE)
+
+        # 右侧说明
+        if desc:
+            df = _f(16)
+            dtxt = str(desc)
+            maxdw = 300
+            if d.textlength(dtxt, font=df) > maxdw:
+                while dtxt and d.textlength(dtxt + "…", font=df) > maxdw:
+                    dtxt = dtxt[:-1]
+                dtxt += "…"
+            dw = d.textlength(dtxt, font=df)
+            d.text((W - PAD - 20 - dw, ry + 16), dtxt, font=df, fill=MUTED)
+
+    fy = H - footer_h + 4
+    d.line([PAD, fy - 8, W - PAD, fy - 8], fill=LINE + (255,), width=1)
+    if footer:
+        d.text((PAD, fy), footer, font=_f(14), fill=MUTED)
+    ts = time.strftime("%Y-%m-%d %H:%M")
+    tw = d.textlength(ts, font=_f(14))
+    d.text((W - PAD - tw, fy), ts, font=_f(14), fill=MUTED)
+
+    out_dir = Path(_temp_dir())
+    out_dir.mkdir(parents=True, exist_ok=True)
+    p = out_dir / f"aram_help_{uuid.uuid4().hex[:10]}.png"
+    img.convert("RGB").save(str(p), "PNG", optimize=True)
+    return str(p)
+
+
 def _temp_dir() -> str:
     try:
         from astrbot.core.utils.astrbot_path import get_astrbot_temp_path

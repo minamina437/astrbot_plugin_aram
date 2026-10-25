@@ -84,6 +84,17 @@ def augment_effect(info: dict) -> str:
     return "\n".join(out)
 
 
+HELP_ITEMS = [
+    ("/海克斯 亚索", "英雄胜率 + 推荐强化"),
+    ("/海克斯 压缩 / 火女 / 诺手", "支持俗称外号"),
+    ("/海克斯 强化 亮剑", "强化效果 + 胜率 + 适配英雄"),
+    ("/海克斯 效果 低音", "同上（别名）"),
+    ("/海克斯 英雄榜", "英雄胜率 Top10"),
+    ("/海克斯 强化榜", "强化胜率 Top10"),
+    ("/海克斯 高分段 亚索", "只看高分段数据"),
+    ("/海克斯 帮助", "本说明"),
+]
+
 HELP = """海克斯大乱斗查询指令：
 /海克斯 亚索           英雄胜率 + 推荐强化
 /海克斯 推荐 亚索       同上
@@ -94,8 +105,8 @@ HELP = """海克斯大乱斗查询指令：
 /海克斯 高分段 亚索      高分段数据
 /海克斯 帮助            本说明
 
-英雄名可用：称号(疾风剑豪)/名字(亚索)/英文(yasuo)
-强化名可用：中文名或英文
+英雄名可用：称号(疾风剑豪)/名字(亚索)/英文(yasuo)/俗称(压缩·火女·诺手)
+强化名可用：全名/缩写/别名（亮剑→亮出你的剑、死舞→升级：死亡之舞）
 数据源 ARAMKit，版本跟随最新补丁。"""
 
 
@@ -295,6 +306,20 @@ class AramQuery(Star):
                 f"梯队 {stats.get('tier', '?')}  样本 {num(stats.get('sampleCount', 0))}")
 
     # ---------------- 出图 ----------------
+    def _help(self, event: AstrMessageEvent):
+        """指令帮助：优先出图，失败回退文本。"""
+        try:
+            path = render.render_help(HELP_ITEMS)
+            if path:
+                try:
+                    event.track_temporary_local_file(path)
+                except Exception:
+                    pass
+                return event.image_result(path)
+        except Exception as e:
+            logger.error(f"[aram] 帮助图渲染失败: {e!r}", exc_info=True)
+        return event.plain_result(HELP)
+
     def _emit(self, event: AstrMessageEvent, *, title, subtitle="", hero=None,
               rows=None, footer="", kind_label="", fallback="", section="", desc=""):
         """优先发图片卡片，渲染失败则回退纯文本。"""
@@ -319,7 +344,7 @@ class AramQuery(Star):
         logger.info(f"[aram] handler entered, a={a!r} b={b!r}")
         raw = (a + " " + b).strip()
         if not a or a in ("帮助", "help", "?", "？"):
-            yield event.plain_result(HELP)
+            yield self._help(event)
             return
 
         parts = raw.split()
@@ -330,7 +355,7 @@ class AramQuery(Star):
             parts = parts[1:]
             raw = " ".join(parts)
         if not parts:
-            yield event.plain_result(HELP)
+            yield self._help(event)
             return
 
         ds_label = "高分段" if dataset == "high" else "全分段"
@@ -435,7 +460,7 @@ class AramQuery(Star):
             query = rest if cmd in ("推荐", "英雄") and rest else (" ".join(parts))
             query = query.strip()
             if not query:
-                yield event.plain_result(HELP)
+                yield self._help(event)
                 return
             hit = await self.find_champion(query)
             if not hit:

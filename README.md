@@ -14,6 +14,10 @@
 
 ![强化效果](preview_augment.png)
 
+`/海克斯 帮助` 也是图片：
+
+![指令帮助](preview_help.png)
+
 ### 视觉规格
 
 | 项 | 值 |
