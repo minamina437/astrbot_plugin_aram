@@ -14,6 +14,8 @@
 """
 import time
 
+import re
+
 import aiohttp
 
 from astrbot.api import logger
@@ -23,9 +25,11 @@ from astrbot.api.star import Context, Star, register
 try:
     from . import render
     from .aliases import NICKNAMES
+    from .aliases_augment import AUGMENT_NICKNAMES
 except ImportError:  # pragma: no cover
     import render  # type: ignore
     from aliases import NICKNAMES  # type: ignore
+    from aliases_augment import AUGMENT_NICKNAMES  # type: ignore
 
 DATA_BASE = "https://data.aramkit.com"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -35,6 +39,13 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 TTL_VERSIONS = 24 * 3600
 TTL_RESOURCES = 24 * 3600
 TTL_RANKINGS = 1800
+
+# 名字归一化：去掉空格和标点，便于「鼓声暴起低音轰鸣」匹配带空格的官方名
+_PUNCT_RE = re.compile(r"[\s：:·・,，。.、!！?？\-—–~～\"'“”‘’()（）\[\]【】<>《》]")
+
+
+def _norm(s) -> str:
+    return _PUNCT_RE.sub("", str(s or "")).lower()
 
 
 def pct(x, nd=1):
@@ -213,18 +224,60 @@ class AramQuery(Star):
         return None
 
     async def find_augment(self, q: str):
-        q = q.strip().lower()
+        """按 别名 > 归一化精确 > 归一化子串 > 模糊 的顺序匹配强化。
+
+        归一化会去掉空格和标点，所以「鼓声暴起低音轰鸣」也能命中
+        「鼓声暴起 低音轰鸣」；长名字只要打其中一段就行。
+        """
+        q0 = str(q or "").strip()
+        if not q0:
+            return None
         au = await self._augments()
-        exact, partial = [], []
+        qn = _norm(q0)
+
+        # 建索引（名字归一化 -> (aid, info)）
+        idx = {}
         for aid, info in au.items():
-            names = [str(info.get("name", "")), str(info.get("slug", ""))]
-            lowered = [n.lower() for n in names]
-            if any(n == q for n in lowered):
-                exact.append((aid, info))
-            elif any(q in n and n for n in lowered):
-                partial.append((aid, info))
-        pool = exact or partial
-        return pool[0] if pool else None
+            n = str(info.get("name", "")).strip()
+            if n:
+                idx[_norm(n)] = (aid, info)
+
+        def by_name(target: str):
+            tn = _norm(target)
+            if tn in idx:
+                return idx[tn]
+            for k, v in idx.items():
+                if tn and tn in k:
+                    return v
+            return None
+
+        # 1) 别名表
+        tgt = AUGMENT_NICKNAMES.get(q0) or AUGMENT_NICKNAMES.get(qn)
+        if tgt:
+            hit = by_name(tgt)
+            if hit:
+                return hit
+
+        # 2) 归一化精确
+        if qn in idx:
+            return idx[qn]
+
+        # 3) 归一化子串（取最短的，避免「九头蛇」命中「升级：贪欲九头蛇」之外的更长名）
+        hits = [(k, v) for k, v in idx.items() if qn and qn in k]
+        if hits:
+            hits.sort(key=lambda x: len(x[0]))
+            return hits[0][1]
+
+        # 4) 模糊匹配（至少 3 个字，避免 2 字误配）
+        if len(qn) >= 3:
+            try:
+                import difflib
+                cand = difflib.get_close_matches(qn, list(idx.keys()), n=1, cutoff=0.62)
+                if cand:
+                    return idx[cand[0]]
+            except Exception:
+                pass
+        return None
 
     # ---------------- 格式化 ----------------
     def _fmt_champ(self, cid, info, stats):

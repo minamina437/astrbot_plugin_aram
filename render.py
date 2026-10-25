@@ -170,7 +170,9 @@ def render(title: str, subtitle: str = "", hero: dict | None = None,
     if len(desc_text) > 230:
         desc_text = desc_text[:230] + "…"
     desc_lines = _wrap(probe, desc_text, _f(17), W - 2 * PAD - 44) if desc_text else []
-    desc_h = (len(desc_lines) * 27 + 52) if desc_lines else 0
+    # 34(分区标题) + 上下各 14 内边距 + 行数*行高 + 底部间距
+    desc_box_h = (len(desc_lines) * 27 + 28) if desc_lines else 0
+    desc_h = (34 + desc_box_h + 10) if desc_lines else 0
 
     head_h = 214 if has_chara else 100
     hero_h = 152 if hero else 0
@@ -239,11 +241,11 @@ def render(title: str, subtitle: str = "", hero: dict | None = None,
         d.rounded_rectangle([PAD + 2, y + 10, PAD + 6, y + 28], radius=2, fill=ROSE)
         d.text((PAD + 14, y + 8), "效果", font=_f(17, True), fill=ROSE)
 
-        box = [PAD, y + 34, W - PAD, y + desc_h - 12]
+        box = [PAD, y + 34, W - PAD, y + 34 + desc_box_h]
         _soft_shadow(img, box, 16, blur=5, offset=2, alpha=55)
         d.rounded_rectangle(box, radius=16, fill=(255, 249, 253, 255))
 
-        ly = y + 34 + 16
+        ly = y + 34 + 14
         for ln in desc_lines:
             d.text((PAD + 22, ly), ln, font=_f(17), fill=TEXT)
             ly += 27

@@ -7,8 +7,7 @@
     "火女": "annie",
 """
 
-NICKNAMES: dict[str, str] = {
-    # ---------------- 战士 / 上单 ----------------
+NICKNAMES: dict[str, str] = {    # ---------------- 战士 / 上单 ----------------
     "诺手": "darius", "人头狗": "darius", "达瑞斯": "darius",
     "德玛": "garen", "草丛伦": "garen", "盖伦": "garen",
     "菊花信": "xinzhao", "赵信": "xinzhao",
