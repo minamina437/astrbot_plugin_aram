@@ -22,8 +22,10 @@ from astrbot.api.star import Context, Star, register
 
 try:
     from . import render
+    from .aliases import NICKNAMES
 except ImportError:  # pragma: no cover
-    import render
+    import render  # type: ignore
+    from aliases import NICKNAMES  # type: ignore
 
 DATA_BASE = "https://data.aramkit.com"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -128,10 +130,33 @@ class AramQuery(Star):
 
     # ---------------- 名字匹配 ----------------
     async def find_champion(self, q: str):
+        """按 外号 > 全名 > 包含 > 模糊 的顺序匹配英雄。"""
         q = q.strip().lower()
+        if not q:
+            return None
         ch = await self._champions()
-        exact = []
-        partial = []
+
+        def by_slug(slug: str):
+            slug = (slug or "").lower()
+            for cid, info in ch.items():
+                if str(info.get("slug", "")).lower() == slug:
+                    return (cid, info)
+            return None
+
+        # 1) 外号表（精确）
+        if q in NICKNAMES:
+            hit = by_slug(NICKNAMES[q])
+            if hit:
+                return hit
+        # 外号表（去空格/常见分隔符后再试一次）
+        q2 = q.replace(" ", "").replace("·", "").replace("-", "")
+        if q2 != q and q2 in NICKNAMES:
+            hit = by_slug(NICKNAMES[q2])
+            if hit:
+                return hit
+
+        # 2) 全名 / 称号 / slug / riotId 精确
+        exact, partial = [], []
         for cid, info in ch.items():
             names = [str(info.get("title", "")), str(info.get("name", "")),
                      str(info.get("slug", "")), str(info.get("riotId", ""))]
@@ -140,8 +165,28 @@ class AramQuery(Star):
                 exact.append((cid, info))
             elif any(q in n and n for n in lowered):
                 partial.append((cid, info))
-        pool = exact or partial
-        return pool[0] if pool else None
+        if exact:
+            return exact[0]
+        if partial:
+            # 取最短的那个（"亚" 命中「亚索」而非「亚托克斯」）
+            partial.sort(key=lambda x: len(str(x[1].get("title", ""))) + len(str(x[1].get("name", ""))))
+            return partial[0]
+
+        # 3) 模糊匹配（容错别字）
+        try:
+            import difflib
+            table = {}
+            for cid, info in ch.items():
+                for key in (info.get("title", ""), info.get("name", ""), info.get("slug", "")):
+                    k = str(key).lower()
+                    if k:
+                        table.setdefault(k, (cid, info))
+            cand = difflib.get_close_matches(q, list(table.keys()), n=1, cutoff=0.6)
+            if cand:
+                return table[cand[0]]
+        except Exception:
+            pass
+        return None
 
     async def find_augment(self, q: str):
         q = q.strip().lower()
