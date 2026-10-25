@@ -50,10 +50,34 @@ def num(x):
     return str(int(x))
 
 
+# 强化稀有度
+RARITY_CN = {
+    "prismatic": "棱彩",
+    "gold": "黄金",
+    "silver": "白银",
+}
+
+
+def augment_effect(info: dict) -> str:
+    """从 tooltip.blocks 里拼出纯文字效果描述。"""
+    tip = info.get("tooltip") or {}
+    blocks = tip.get("blocks") or []
+    out = []
+    for b in blocks:
+        spans = b.get("spans") or []
+        seg = "".join(str(s.get("text", "")) for s in spans
+                      if s.get("type") == "text")
+        seg = seg.strip()
+        if seg:
+            out.append(seg)
+    return "\n".join(out)
+
+
 HELP = """海克斯大乱斗查询指令：
 /海克斯 亚索           英雄胜率 + 推荐强化
 /海克斯 推荐 亚索       同上
-/海克斯 强化 回归基本功  强化胜率 + 适配英雄
+/海克斯 强化 回归基本功  强化效果 + 胜率 + 适配英雄
+/海克斯 效果 亮出你的剑  只看效果（同「强化」）
 /海克斯 英雄榜          英雄胜率 Top 10
 /海克斯 强化榜          强化胜率 Top 10
 /海克斯 高分段 亚索      高分段数据
@@ -219,12 +243,12 @@ class AramQuery(Star):
 
     # ---------------- 出图 ----------------
     def _emit(self, event: AstrMessageEvent, *, title, subtitle="", hero=None,
-              rows=None, footer="", kind_label="", fallback="", section=""):
+              rows=None, footer="", kind_label="", fallback="", section="", desc=""):
         """优先发图片卡片，渲染失败则回退纯文本。"""
         try:
             path = render.render(title=title, subtitle=subtitle, hero=hero,
                                  rows=rows, footer=footer, kind_label=kind_label,
-                                 section=section)
+                                 section=section, desc=desc)
             if path:
                 try:
                     event.track_temporary_local_file(path)
@@ -306,15 +330,21 @@ class AramQuery(Star):
                     fallback="海克斯强化胜率 Top10\n" + "\n".join(lines))
                 return
 
-            if cmd in ("强化", "海克斯强化", "augment"):
+            if cmd in ("强化", "海克斯强化", "augment", "效果", "强化效果", "查"):
                 if not rest:
-                    yield event.plain_result("用法：/海克斯 强化 <强化名>\n例：/海克斯 强化 回归基本功")
+                    yield event.plain_result(
+                        "用法：/海克斯 强化 <强化名>\n"
+                        "例：/海克斯 强化 回归基本功\n"
+                        "     /海克斯 效果 亮出你的剑")
                     return
                 hit = await self.find_augment(rest)
                 if not hit:
                     yield event.plain_result(f"没找到强化「{rest}」，换个名字试试（可用中文名或英文）")
                     return
                 aid, info = hit
+                effect_text = augment_effect(info)
+                rarity = RARITY_CN.get(str(info.get("rarity", "")).lower(), "")
+
                 detail = await self._detail(dataset, "augment", int(aid))
                 aug_stats = detail.get("augment", {})
                 champs = detail.get("champions", {})
@@ -334,15 +364,18 @@ class AramQuery(Star):
                 yield self._emit(
                     event,
                     title=info.get("name", str(aid)),
-                    subtitle="海克斯强化",
+                    subtitle=f"海克斯强化{(' · ' + rarity) if rarity else ''}",
                     hero={"name": info.get("name", str(aid)),
                           "tag": "",
                           "big": pct(aug_stats.get("winRate", 0)),
                           "sub": f"选取率 {pct(aug_stats.get('pickRate', 0))}\n样本 {num(aug_stats.get('sampleCount', 0))}",
                           "tier": aug_stats.get("tier", "")},
+                    desc=effect_text,
                     rows=rows, kind_label="强化", section="适配英雄",
                     footer="数据源 ARAMKit",
-                    fallback="\n".join(lines))
+                    fallback=(f"{info.get('name', aid)}"
+                              + (f"（{rarity}）" if rarity else "")
+                              + f"\n{effect_text}\n\n" + "\n".join(lines)))
                 return
 
             # 默认：英雄查询（含"推荐"前缀）

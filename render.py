@@ -140,14 +140,37 @@ def _glow(img, cx, cy, r, color=ROSE_SOFT, alpha=90):
     img.alpha_composite(layer)
 
 
+def _wrap(d, text, font, max_w):
+    """按像素宽度折行（逐字符，适配中文）。"""
+    lines = []
+    for para in str(text).split("\n"):
+        cur = ""
+        for ch in para:
+            if cur and d.textlength(cur + ch, font=font) > max_w:
+                lines.append(cur)
+                cur = ch
+            else:
+                cur += ch
+        lines.append(cur)
+    return lines
+
+
 def render(title: str, subtitle: str = "", hero: dict | None = None,
            rows: list | None = None, footer: str = "", kind_label: str = "",
-           section: str = "") -> str | None:
+           section: str = "", desc: str = "") -> str | None:
     """渲染一张卡片，返回 PNG 路径；失败返回 None。"""
     if not available():
         return None
     rows = rows or []
     has_chara = _load_chara() is not None
+
+    # 效果描述：先测宽算行数
+    probe = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+    desc_text = str(desc or "").strip()
+    if len(desc_text) > 230:
+        desc_text = desc_text[:230] + "…"
+    desc_lines = _wrap(probe, desc_text, _f(17), W - 2 * PAD - 44) if desc_text else []
+    desc_h = (len(desc_lines) * 27 + 52) if desc_lines else 0
 
     head_h = 214 if has_chara else 100
     hero_h = 152 if hero else 0
@@ -156,7 +179,7 @@ def render(title: str, subtitle: str = "", hero: dict | None = None,
     body_h = len(rows) * row_h + (12 if rows else 0)
     footer_h = 44
     bottom_pad = 34 if has_chara else 18
-    H = head_h + hero_h + sec_h + body_h + footer_h + bottom_pad
+    H = head_h + hero_h + desc_h + sec_h + body_h + footer_h + bottom_pad
 
     img = _gradient(W, H)
 
@@ -210,6 +233,21 @@ def render(title: str, subtitle: str = "", hero: dict | None = None,
             sx = PAD + 30 + bw_big + 56
             d.multiline_text((sx, tyy + 50), sub, font=_f(16), fill=TEXT, spacing=7)
         y += hero_h
+
+    # ---- 效果描述 ----
+    if desc_lines:
+        d.rounded_rectangle([PAD + 2, y + 10, PAD + 6, y + 28], radius=2, fill=ROSE)
+        d.text((PAD + 14, y + 8), "效果", font=_f(17, True), fill=ROSE)
+
+        box = [PAD, y + 34, W - PAD, y + desc_h - 12]
+        _soft_shadow(img, box, 16, blur=5, offset=2, alpha=55)
+        d.rounded_rectangle(box, radius=16, fill=(255, 249, 253, 255))
+
+        ly = y + 34 + 16
+        for ln in desc_lines:
+            d.text((PAD + 22, ly), ln, font=_f(17), fill=TEXT)
+            ly += 27
+        y += desc_h
 
     # ---- 分区标题 ----
     if rows and section:
